@@ -56,7 +56,8 @@ int client_login(SOCKET client, SSL *ssl, ofstream &lerr, mutex &mtx_errorlog)
 		{
 			username = &(buffer[LEN_HEADER]);
 			password = &(buffer[LEN_HEADER + LEN_UNAME]);
-			if (username.length() < LEN_UNAME && password.length() < LEN_UPASS) {
+			if (username.length() < LEN_UNAME && username.length()>0
+				&& password.length() < LEN_UPASS && password.length()>0) {
 				try {
 					db_new_user(stmts, username, password);
 				}
@@ -76,6 +77,8 @@ int client_login(SOCKET client, SSL *ssl, ofstream &lerr, mutex &mtx_errorlog)
 			return EXIT_FAILURE;
 		}
 	}
+	close_client(client, ssl);
+	return EXIT_FAILURE;
 }
 
 void clear_buffer(vector<char> &buffer)
@@ -111,7 +114,7 @@ void client_loop(SSL *ssl, ofstream &lerr, mutex &mtx_errorlog,
 		clear_buffer(buffer);
 		receive_len = SSL_read(ssl, &(buffer[0]), BUFFER_SIZE);
 
-		if (receive_len >= BUFFER_SIZE) return;
+		if (receive_len >= BUFFER_SIZE && receive_len == 0) return;
 
 		switch (buffer[0]) {
 		case H_CHANGE_PASS:
