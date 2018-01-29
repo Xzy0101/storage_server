@@ -261,6 +261,8 @@ __pycache__/
 *.pyc
 
 # DLLs, private key and certificate, log file
-**/*.dll
-**/*.pem
+libmysql.dll
+mysqlcppconn.dll
+key.pem
+cert.pem
 error.log
