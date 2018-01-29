@@ -261,6 +261,6 @@ __pycache__/
 *.pyc
 
 # DLLs, private key and certificate, log file
-*.dll
-*.pem
+**/*.dll
+**/*.pem
 error.log
