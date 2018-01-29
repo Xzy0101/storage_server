@@ -259,3 +259,8 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
+
+# DLLs, private key and certificate, log file
+*.dll
+*.pem
+error.log
