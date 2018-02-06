@@ -30,6 +30,7 @@ int db_new_data(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
 	std::istream* dt)
 {
 	std::auto_ptr<sql::ResultSet> res;
+	int rnum = -1;
 
 	stmts[STMT_NEW_DATA]->setString(1, username);
 	stmts[STMT_NEW_DATA]->setString(2, devicename);
@@ -38,11 +39,11 @@ int db_new_data(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
 	do {
 		res.reset(stmts[STMT_NEW_DATA]->getResultSet());
 		while (res->next()) {
-			return res->getInt("record_number");
+			rnum = res->getInt("record_number");
 		}
 	} while (stmts[STMT_GET_RNUM]->getMoreResults());
 
-	return -1;
+	return rnum;
 }
 
 int db_check_pass(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
@@ -50,6 +51,7 @@ int db_check_pass(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
 	const std::string& password)
 {
 	std::auto_ptr<sql::ResultSet> res;
+	bool match = false;
 
 	stmts[STMT_CHECK_PASS]->setString(1, username);
 	stmts[STMT_CHECK_PASS]->setString(2, password);
@@ -57,11 +59,14 @@ int db_check_pass(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
 	do {
 		res.reset(stmts[STMT_CHECK_PASS]->getResultSet());
 		while (res->next()) {
-			return res->getBoolean("name_pass_match");
+			match = res->getBoolean("name_pass_match");
 		}
 	} while (stmts[STMT_CHECK_PASS]->getMoreResults());
 
-	return -1;
+	if (match)
+		return match;
+	else
+		return -1;
 }
 
 int db_change_pass(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
@@ -78,17 +83,18 @@ int db_get_rnum(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
 	const std::string& username)
 {
 	std::auto_ptr<sql::ResultSet> res;
+	int rnum = -1;
 
 	stmts[STMT_GET_RNUM]->setString(1, username);
 	stmts[STMT_GET_RNUM]->execute();
 	do {
 		res.reset(stmts[STMT_GET_RNUM]->getResultSet());
 		while (res->next()) {
-			return res->getInt("record_number");
+			rnum = res->getInt("record_number");
 		}
 	} while (stmts[STMT_GET_RNUM]->getMoreResults());
 
-	return -1;
+	return rnum;
 }
 
 void db_get_data(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
