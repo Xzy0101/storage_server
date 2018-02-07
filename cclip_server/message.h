@@ -16,7 +16,7 @@ using namespace std;
 #define LEN_UNAME 17  //including string ending 0
 #define LEN_UPASS 65  //including string ending 0
 #define LEN_RNUM sizeof(int)
-#define LEN_DNAME 17  //including string ending 0
+#define LEN_DNAME 49  //including string ending 0
 #define LEN_DATA (16*1024*1024)  //Max payload size 16MB
 
 /* Max payload size, plus header and device name. */
