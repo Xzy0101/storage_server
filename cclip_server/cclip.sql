@@ -9,8 +9,8 @@ DROP TABLE IF EXISTS User;
 
 CREATE TABLE User(
 	userName VARCHAR(16) PRIMARY KEY,
-    passHash VARCHAR(64) NOT NULL,
-    salt VARCHAR(64) NOT NULL,
+    passHash VARBINARY(32) NOT NULL,
+    salt VARBINARY(32) NOT NULL,
     createTime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -33,7 +33,7 @@ DROP PROCEDURE IF EXISTS get_data;
 
 DELIMITER $$
 
-CREATE PROCEDURE new_user(IN uname VARCHAR(16), IN upass VARCHAR(64), IN usalt VARCHAR(64))
+CREATE PROCEDURE new_user(IN uname VARCHAR(16), IN upass VARBINARY(32), IN usalt VARBINARY(32))
 BEGIN
 INSERT INTO User (userName, passHash, salt) VALUES (uname, upass, usalt);
 END$$
@@ -43,7 +43,7 @@ BEGIN
 SELECT passHash, salt FROM User WHERE userName = uname;
 END$$
 
-CREATE PROCEDURE change_pass(IN uname VARCHAR(16), IN upass VARCHAR(64), IN usalt VARCHAR(64))
+CREATE PROCEDURE change_pass(IN uname VARCHAR(16), IN upass VARBINARY(32), IN usalt VARBINARY(32))
 BEGIN
 UPDATE User SET passHash = upass, salt = usalt WHERE userName = uname;
 END$$
