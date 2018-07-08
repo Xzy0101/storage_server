@@ -42,7 +42,7 @@ SOCKET create_socket(ofstream& lerr, mutex& mtx_errorlog)
 	return s;
 }
 
-void init_openssl()
+void init_openssl(void)
 {
 	SSL_load_error_strings();
 	OpenSSL_add_ssl_algorithms();

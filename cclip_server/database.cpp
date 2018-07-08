@@ -1,118 +1,144 @@
 #include "database.h"
-
-void db_initialize(std::auto_ptr<sql::Connection> &con, 
-	std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts)
+DBEngine::DBEngine()
 {
-	sql::Driver* driver = get_driver_instance();
-	con.reset(driver->connect(DB_HOST, DB_USER, DB_PASS));
-	con->setSchema(DB_SCHEMA);
-	stmts[STMT_NEW_USER].reset(con->prepareStatement("CALL new_user(?,?)"));
-	stmts[STMT_NEW_DATA].reset(con->prepareStatement("CALL new_data(?,?,?)"));
-	stmts[STMT_CHECK_PASS].reset(con->prepareStatement("CALL check_pass(?,?)"));
-	stmts[STMT_CHANGE_PASS].reset(con->prepareStatement("CALL change_pass(?,?)"));
-	stmts[STMT_GET_RNUM].reset(con->prepareStatement("CALL get_rnum(?)"));
-	stmts[STMT_GET_DATA].reset(con->prepareStatement("CALL get_data(?,?)"));
+	driver = get_driver_instance();
 }
 
-int db_new_user(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts, 
-	const std::string& username, 
-	const std::string& password)
+int DBEngine::new_user(const std::string& username, 
+	std::istream *passHash,
+	std::istream *salt)
 {
-	stmts[STMT_NEW_USER]->setString(1, username);
-	stmts[STMT_NEW_USER]->setString(2, password);
-
-	return stmts[STMT_NEW_USER]->execute();
+	int res;
+	std::auto_ptr<sql::Connection> conn(driver->connect(HOST, USER, PASS));
+	conn->setSchema(SCHEMA);
+	conn->setAutoCommit(false);
+	std::auto_ptr<sql::PreparedStatement>stmt(conn->prepareStatement("CALL new_user(?, ?, ?);"));
+	stmt->setString(1, username);
+	stmt->setBlob(2, passHash);
+	stmt->setBlob(3, salt);
+	res = stmt->executeUpdate();
+	conn->commit();
+	conn->close();
+	return res;
 }
 
-int db_new_data(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username,
+int DBEngine::new_data(const std::string& username,
 	const std::string& devicename, 
 	std::istream* dt)
 {
+	std::auto_ptr<sql::Connection> conn(driver->connect(HOST, USER, PASS));
+	conn->setSchema(SCHEMA);
+	conn->setAutoCommit(false);
 	std::auto_ptr<sql::ResultSet> res;
+	std::auto_ptr<sql::PreparedStatement>stmt(conn->prepareStatement("CALL new_data(?, ?, ?);"));
 	int rnum = -1;
-
-	stmts[STMT_NEW_DATA]->setString(1, username);
-	stmts[STMT_NEW_DATA]->setString(2, devicename);
-	stmts[STMT_NEW_DATA]->setBlob(3, dt);
-	stmts[STMT_NEW_DATA]->execute();
+	stmt->setString(1, username);
+	stmt->setString(2, devicename);
+	stmt->setBlob(3, dt);
+	stmt->execute();
 	do {
-		res.reset(stmts[STMT_NEW_DATA]->getResultSet());
+		res.reset(stmt->getResultSet());
 		while (res->next()) {
-			rnum = res->getInt("record_number");
+			rnum = res->getInt("numOfRecords");
 		}
-	} while (stmts[STMT_GET_RNUM]->getMoreResults());
+	} while (stmt->getMoreResults());
 
+	conn->commit();
+	conn->close();
 	return rnum;
 }
 
-int db_check_pass(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username,
-	const std::string& password)
+int DBEngine::get_pass(const std::string& username, 
+	std::auto_ptr<std::istream>& passHash, 
+	std::auto_ptr<std::istream>& salt)
 {
+	std::auto_ptr<sql::Connection> conn(driver->connect(HOST, USER, PASS));
+	conn->setSchema(SCHEMA);
+	conn->setAutoCommit(false);
 	std::auto_ptr<sql::ResultSet> res;
-	bool match = false;
+	std::auto_ptr<sql::PreparedStatement> stmt(conn->prepareStatement("CALL get_pass(?);"));
+	int count = 0;
 
-	stmts[STMT_CHECK_PASS]->setString(1, username);
-	stmts[STMT_CHECK_PASS]->setString(2, password);
-	stmts[STMT_CHECK_PASS]->execute();
+	stmt->setString(1, username);
+	stmt->execute();
 	do {
-		res.reset(stmts[STMT_CHECK_PASS]->getResultSet());
+		res.reset(stmt->getResultSet());
 		while (res->next()) {
-			match = res->getBoolean("name_pass_match");
+			passHash.reset(res->getBlob("passHash"));
+			salt.reset(res->getBlob("salt"));
+			count++;
 		}
-	} while (stmts[STMT_CHECK_PASS]->getMoreResults());
+	} while (stmt->getMoreResults());
 
-	if (match)
-		return match;
-	else
-		return -1;
+	conn->commit();
+	conn->close();
+	return count;
 }
 
-int db_change_pass(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username,
-	const std::string& newpass)
+int DBEngine::change_pass(const std::string& username,
+	std::istream *newPassHash,
+	std::istream *newSalt)
 {
-	stmts[STMT_CHANGE_PASS]->setString(1, username);
-	stmts[STMT_CHANGE_PASS]->setString(2, newpass);
+	std::auto_ptr<sql::Connection> conn(driver->connect(HOST, USER, PASS));
+	conn->setSchema(SCHEMA);
+	conn->setAutoCommit(false);
+	int res;
+	std::auto_ptr<sql::PreparedStatement> stmt(conn->prepareStatement("CALL change_pass(?, ?, ?);"));
+	stmt->setString(1, username);
+	stmt->setBlob(2, newPassHash);
+	stmt->setBlob(3, newSalt);
 
-	return stmts[STMT_CHANGE_PASS]->executeUpdate();
+	res = stmt->executeUpdate();
+	conn->commit();
+	conn->close();
+	return res;
 }
 
-int db_get_rnum(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username)
+int DBEngine::get_rnum(const std::string& username)
 {
+	std::auto_ptr<sql::Connection> conn(driver->connect(HOST, USER, PASS));
+	conn->setSchema(SCHEMA);
+	conn->setAutoCommit(false);
 	std::auto_ptr<sql::ResultSet> res;
+	std::auto_ptr<sql::PreparedStatement> stmt(conn->prepareStatement("CALL get_rnum(?);"));
 	int rnum = -1;
 
-	stmts[STMT_GET_RNUM]->setString(1, username);
-	stmts[STMT_GET_RNUM]->execute();
+	stmt->setString(1, username);
+	stmt->execute();
 	do {
-		res.reset(stmts[STMT_GET_RNUM]->getResultSet());
+		res.reset(stmt->getResultSet());
 		while (res->next()) {
-			rnum = res->getInt("record_number");
+			rnum = res->getInt("numOfRecords");
 		}
-	} while (stmts[STMT_GET_RNUM]->getMoreResults());
+	} while (stmt->getMoreResults());
 
+	conn->commit();
+	conn->close();
 	return rnum;
 }
 
-void db_get_data(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username,
+void DBEngine::get_data(const std::string& username,
 	int record_number,
 	std::string& devicename,
 	std::auto_ptr<std::istream> &dt)
 {
+	std::auto_ptr<sql::Connection> conn(driver->connect(HOST, USER, PASS));
+	conn->setSchema(SCHEMA);
+	conn->setAutoCommit(false);
 	std::auto_ptr<sql::ResultSet> res;
+	std::auto_ptr<sql::PreparedStatement> stmt(conn->prepareStatement("CALL get_data(?, ?);"));
 
-	stmts[STMT_GET_DATA]->setString(1, username);
-	stmts[STMT_GET_DATA]->setInt(2, record_number);
-	stmts[STMT_GET_DATA]->execute();
+	stmt->setString(1, username);
+	stmt->setInt(2, record_number);
+	stmt->execute();
 	do {
-		res.reset(stmts[STMT_GET_DATA]->getResultSet());
+		res.reset(stmt->getResultSet());
 		while (res->next()) {
-			devicename = res->getString("device_name");
+			devicename = res->getString("deviceName");
 			dt.reset(res->getBlob("data"));
 		}
-	} while (stmts[STMT_GET_DATA]->getMoreResults());
+	} while (stmt->getMoreResults());
+
+	conn->commit();
+	conn->close();
 }

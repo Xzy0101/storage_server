@@ -20,7 +20,7 @@
 using namespace std;
 
 SOCKET create_socket(ofstream& lerr, mutex& mtx_errorlog);
-void init_openssl();
+void init_openssl(void);
 SSL_CTX *set_context(ofstream& lerr, mutex& mtx_errorlog);
 int accept_client(SOCKET server, SSL_CTX *ctx, SOCKET &client, SSL *&ssl, ofstream& lerr, mutex& mtx_errorlog);
 void close_client(SOCKET client, SSL* ssl);

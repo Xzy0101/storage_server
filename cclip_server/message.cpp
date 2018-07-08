@@ -1,10 +1,13 @@
 #include "message.h"
+#include "pbkdf2_pass_hash.h"
+
+#define PASS_SALT_LEN 32
+#define PASS_HASH_LEN 32
 
 void clear_buffer(vector<char> &buffer);
 void log_sql(sql::SQLException &e, ofstream &lerr, mutex &mtx_errorlog);
 void client_loop(SSL *ssl, ofstream &lerr, mutex &mtx_errorlog, 
-	const string &uname, vector<char> &buffer, 
-	vector<auto_ptr<sql::PreparedStatement>>& stmts);
+	const string &uname, vector<char> &buffer, auto_ptr<DBEngine>& db);
 int dt_to_buffer(auto_ptr<istream> &dt, vector<char> &buffer, int pstart);
 
 int client_login(SOCKET client, SSL *ssl, ofstream &lerr, mutex &mtx_errorlog)
@@ -12,10 +15,9 @@ int client_login(SOCKET client, SSL *ssl, ofstream &lerr, mutex &mtx_errorlog)
 	vector<char> buffer(BUFFER_SIZE);
 	int receive_len = 0;
 
-	auto_ptr<sql::Connection> con;
-	vector<auto_ptr<sql::PreparedStatement>> stmts(NUM_STMT);
+	auto_ptr<DBEngine> db;
 	try {
-		db_initialize(con, stmts);
+		db.reset(new DBEngine());
 	}
 	catch (sql::SQLException &e) {
 		log_sql(e, lerr, mtx_errorlog);
@@ -25,7 +27,10 @@ int client_login(SOCKET client, SSL *ssl, ofstream &lerr, mutex &mtx_errorlog)
 
 	string username;
 	string password;
-	int match_pass = 0;
+	unsigned char salt[PASS_SALT_LEN];
+	unsigned char passHash[PASS_HASH_LEN];
+	unsigned char storedPassHash[PASS_HASH_LEN];
+	bool match_pass = false;
 
 	receive_len = SSL_read(ssl, &(buffer[0]), BUFFER_SIZE);
 	if (receive_len < BUFFER_SIZE) {
@@ -34,18 +39,26 @@ int client_login(SOCKET client, SSL *ssl, ofstream &lerr, mutex &mtx_errorlog)
 		{
 			username = &(buffer[LEN_HEADER]);
 			password = &(buffer[LEN_HEADER + LEN_UNAME]);
+			auto_ptr<istream> saltStream;
+			auto_ptr<istream> passHashStream;
 			if (username.length() < LEN_UNAME && password.length() < LEN_UPASS) {
 				try {
-					match_pass = db_check_pass(stmts, username, password);
+					db->get_pass(username, passHashStream, saltStream);
 				}
 				catch (sql::SQLException &e) {
 					log_sql(e, lerr, mtx_errorlog);
 					close_client(client, ssl);
 					return EXIT_FAILURE;
 				}
-				if (match_pass == 1) {
+				saltStream->flags(ios::binary);
+				passHashStream->flags(ios::binary);
+				saltStream->read((char *)salt, PASS_SALT_LEN);
+				passHashStream->read((char *)storedPassHash, PASS_HASH_LEN);
+				hash_pass(password.c_str(), salt, PASS_SALT_LEN, passHash, PASS_HASH_LEN);
+				match_pass = 0 == memcmp(passHash, storedPassHash, PASS_HASH_LEN);
+				if (match_pass) {
 					SSL_write(ssl, &M_ACCEPTED, sizeof(M_ACCEPTED));
-					client_loop(ssl, lerr, mtx_errorlog, username, buffer, stmts);
+					client_loop(ssl, lerr, mtx_errorlog, username, buffer, db);
 					close_client(client, ssl);
 					return EXIT_SUCCESS;
 				}
@@ -58,8 +71,13 @@ int client_login(SOCKET client, SSL *ssl, ofstream &lerr, mutex &mtx_errorlog)
 			password = &(buffer[LEN_HEADER + LEN_UNAME]);
 			if (username.length() < LEN_UNAME && username.length()>0
 				&& password.length() < LEN_UPASS && password.length()>0) {
+				hash_new_pass(password.c_str(), salt, PASS_SALT_LEN, passHash, PASS_HASH_LEN);
+				stringstream saltStream;
+				stringstream passHashStream;
+				saltStream.write((const char *)salt, PASS_SALT_LEN);
+				passHashStream.write((const char *)passHash, PASS_HASH_LEN);
 				try {
-					db_new_user(stmts, username, password);
+					db->new_user(username, &passHashStream, &saltStream);
 				}
 				catch (sql::SQLException &e) {
 					log_sql(e, lerr, mtx_errorlog);
@@ -106,8 +124,7 @@ void log_sql(sql::SQLException &e, ofstream &lerr, mutex &mtx_errorlog)
 }
 
 void client_loop(SSL *ssl, ofstream &lerr, mutex &mtx_errorlog,
-	const string &uname, vector<char> &buffer,
-	vector<auto_ptr<sql::PreparedStatement>>& stmts)
+	const string &uname, vector<char> &buffer, auto_ptr<DBEngine>& db)
 {
 	int receive_len = 0;
 	while (true) {
@@ -122,8 +139,15 @@ void client_loop(SSL *ssl, ofstream &lerr, mutex &mtx_errorlog,
 			string password = &(buffer[LEN_HEADER]);
 			if (password.length() >= LEN_UPASS)
 				return;
+			stringstream saltStream;
+			stringstream passHashStream;
+			unsigned char salt[PASS_SALT_LEN];
+			unsigned char passHash[PASS_HASH_LEN];
+			hash_new_pass(password.c_str(), salt, PASS_SALT_LEN, passHash, PASS_HASH_LEN);
+			saltStream.write((const char *)salt, PASS_SALT_LEN);
+			passHashStream.write((const char *)passHash, PASS_HASH_LEN);
 			try {
-				db_change_pass(stmts, uname, password);
+				db->change_pass(uname, &passHashStream,&saltStream);
 			}
 			catch (sql::SQLException &e) {
 				log_sql(e, lerr, mtx_errorlog);
@@ -136,7 +160,7 @@ void client_loop(SSL *ssl, ofstream &lerr, mutex &mtx_errorlog,
 		{
 			int rnum = -1;
 			try {
-				rnum = db_get_rnum(stmts, uname);
+				rnum = db->get_rnum(uname);
 			}
 			catch (sql::SQLException &e) {
 				log_sql(e, lerr, mtx_errorlog);
@@ -159,7 +183,7 @@ void client_loop(SSL *ssl, ofstream &lerr, mutex &mtx_errorlog,
 			string dname;
 			auto_ptr<istream> dt;
 			try {
-				db_get_data(stmts, uname, rnum, dname, dt);
+				db->get_data(uname, rnum, dname, dt);
 			}
 			catch (sql::SQLException &e) {
 				log_sql(e, lerr, mtx_errorlog);
@@ -181,7 +205,7 @@ void client_loop(SSL *ssl, ofstream &lerr, mutex &mtx_errorlog,
 				return;
 			dt.write(&(buffer[LEN_HEADER + LEN_DNAME]), receive_len - LEN_HEADER - LEN_DNAME);
 			try {
-				rnum = db_new_data(stmts, uname, dname, &dt);
+				rnum = db->new_data(uname, dname, &dt);
 			}
 			catch (sql::SQLException &e) {
 				log_sql(e, lerr, mtx_errorlog);
@@ -206,7 +230,9 @@ void client_loop(SSL *ssl, ofstream &lerr, mutex &mtx_errorlog,
 /* return message length */
 int dt_to_buffer(auto_ptr<istream> &dt, vector<char> &buffer, int pstart)
 {
-	while (dt->get(buffer[pstart]))
+	while (!dt->eof()) {
+		dt->get(buffer[pstart]);
 		pstart++;
+	}
 	return pstart;
 }

@@ -2,9 +2,6 @@
 
 /*
  * MySQL database queries.
- * All stored procedures are called via prepared statements.
- * Needs a vector to store all these statements.
- * This vector must be of size NUM_STMT before db_initialize().
  */
 
 #ifndef CCLIP_DATABASE_H
@@ -23,40 +20,21 @@
 #include <cppconn/resultset.h>
 #include <cppconn/prepared_statement.h>
 
-#define DB_HOST "localhost"
-#define DB_USER "cclip_admin"
-#define DB_PASS "asdf123456JKL:"
-#define DB_SCHEMA "cclip"
-
-#define NUM_STMT 6
-#define STMT_NEW_USER 0
-#define STMT_NEW_DATA 1
-#define STMT_CHECK_PASS 2
-#define STMT_CHANGE_PASS 3
-#define STMT_GET_RNUM 4
-#define STMT_GET_DATA 5
-
-void db_initialize(std::auto_ptr<sql::Connection> &con,
-	std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts);
-int db_new_user(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username,
-	const std::string& password);
-int db_new_data(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username,
-	const std::string& devicename,
-	std::istream* dt);
-int db_check_pass(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username,
-	const std::string& password);
-int db_change_pass(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username,
-	const std::string& newpass);
-int db_get_rnum(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username);
-void db_get_data(std::vector<std::auto_ptr<sql::PreparedStatement>> &stmts,
-	const std::string& username,
-	int record_number,
-	std::string& devicename,
-	std::auto_ptr<std::istream> &dt);
+class DBEngine {
+public:
+	DBEngine();
+	int new_user(const std::string& username, std::istream *passHash, std::istream *salt);
+	int new_data(const std::string& username, const std::string& devicename, std::istream* dt);
+	int get_pass(const std::string& username, std::auto_ptr<std::istream>& passHash, std::auto_ptr<std::istream>& salt);
+	int change_pass(const std::string& username, std::istream *newPassHash, std::istream *newSalt);
+	int get_rnum(const std::string& username);
+	void get_data(const std::string& username, int record_number, std::string& devicename, std::auto_ptr<std::istream> &dt);
+private:
+	sql::Driver *driver;
+	const std::string HOST = "localhost";
+	const std::string USER = "cclip_admin";
+	const std::string PASS = "asdf123456JKL:";
+	const std::string SCHEMA = "cclip";
+};
 
 #endif
